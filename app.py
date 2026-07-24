@@ -9,14 +9,12 @@ load_dotenv(".env.local")
 
 st.set_page_config(
     page_title="Social Caption Generator",
-    page_icon="✨",
     layout="centered"
 )
 
 # ── Styles ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .main { max-width: 750px; }
     .stTextArea textarea { font-size: 15px; }
     .caption-box {
         background: #f0f4ff;
@@ -42,26 +40,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Header ────────────────────────────────────────────────────────────────────
-st.markdown('<p class="header-text">✨ Social Caption Generator</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-text">Generate AI-powered social media captions for your products — instantly.</p>', unsafe_allow_html=True)
+st.markdown('<p class="header-text">Social Caption Generator</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-text">Generate AI-powered social media captions for your products instantly.</p>', unsafe_allow_html=True)
 
 # ── API Key ───────────────────────────────────────────────────────────────────
-# Try Streamlit secrets first, then env, then ask user
-def get_api_key():
-    try:
-        key = st.secrets["GEMINI_API_KEY"]
-        if key:
-            return key
-    except Exception:
-        pass
-    return os.environ.get("GEMINI_API_KEY", "")
-
-api_key = get_api_key()
+# Streamlit Cloud injects secrets into os.environ automatically.
+api_key = os.environ.get("GEMINI_API_KEY", "")
 
 # If no key found anywhere, show input field
 if not api_key:
     st.warning("Please enter your Gemini API Key to get started.")
-    api_key = st.text_input("🔑 Gemini API Key", type="password", placeholder="AQ.Ab8R...")
+    api_key = st.text_input("Gemini API Key", type="password", placeholder="AQ...")
     if not api_key:
         st.stop()
 
@@ -106,7 +95,7 @@ Example:
                 # Rate limit - wait and retry
                 countdown = st.empty()
                 for s in range(12, 0, -1):
-                    countdown.warning(f"⏳ API rate limit hit. Retrying in {s} seconds... (attempt {attempt+1}/3)")
+                    countdown.warning(f"API rate limit hit. Retrying in {s} seconds... (attempt {attempt+1}/3)")
                     time.sleep(1)
                 countdown.empty()
             else:
@@ -119,16 +108,16 @@ st.divider()
 col1, col2 = st.columns([3, 1])
 with col1:
     description_input = st.text_area(
-        "📦 Product / Service Description",
+        "Product / Service Description",
         placeholder="e.g. Premium handmade leather wallet\n\nFor batch mode: add each product on a new line",
         height=140,
         help="Tip: Enter multiple products on separate lines to use batch mode!"
     )
 with col2:
-    tone = st.selectbox("🎭 Tone", ["Funny", "Professional", "Luxury"])
-    num_captions = st.selectbox("# Captions", [5, 3, 10], index=0)
+    tone = st.selectbox("Tone", ["Funny", "Professional", "Luxury"])
+    num_captions = st.selectbox("Captions", [5, 3, 10], index=0)
 
-generate_btn = st.button("🚀 Generate Captions", use_container_width=True, type="primary")
+generate_btn = st.button("Generate Captions", use_container_width=True, type="primary")
 
 # ── Results ───────────────────────────────────────────────────────────────────
 if generate_btn:
@@ -138,7 +127,7 @@ if generate_btn:
         st.warning("Please enter at least one product description.")
     else:
         st.markdown("---")
-        st.subheader("📣 Generated Captions")
+        st.subheader("Generated Captions")
 
         progress = st.progress(0)
         status = st.empty()
@@ -154,10 +143,10 @@ if generate_btn:
 
             if captions:
                 if len(products) > 1:
-                    st.markdown(f"### 🏷️ {product}")
+                    st.markdown(f"### {product}")
 
                 for j, cap in enumerate(captions[:num_captions]):
-                    st.markdown(f'<div class="caption-box">📌 <b>Caption {j+1}:</b><br><br>{cap}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="caption-box"><b>Caption {j+1}:</b><br><br>{cap}</div>', unsafe_allow_html=True)
 
                 if usage and "error" not in usage:
                     total_in += usage["input"]
@@ -168,11 +157,11 @@ if generate_btn:
 
             progress.progress((i + 1) / len(products))
 
-        status.success(f"✅ Done! Generated captions for {len(products)} product(s).")
+        status.success(f"Done! Generated captions for {len(products)} product(s).")
 
         # Show cost log at the bottom
         st.markdown(
-            f'<div class="cost-box">📊 <b>Token Usage Log</b> — '
+            f'<div class="cost-box"><b>Token Usage Log</b> — '
             f'Input: {total_in} tokens | Output: {total_out} tokens | '
             f'Estimated Cost: <b>${total_cost:.6f}</b></div>',
             unsafe_allow_html=True
