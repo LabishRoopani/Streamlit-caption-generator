@@ -53,7 +53,7 @@ api_key = part1 + part2
 # ── Caption Generator Logic ───────────────────────────────────────────────────
 def generate_captions(description, tone, api_key):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-3.5-flash")
+    model = genai.GenerativeModel("gemini-3.6-flash")
 
     prompt = f"""
 You are a social media expert. Generate exactly 5 unique social media captions for this product.
