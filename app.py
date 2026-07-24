@@ -5,181 +5,179 @@ import json
 import time
 from dotenv import load_dotenv
 
-# Load environment variables (works locally)
 load_dotenv(".env.local")
 
-# Configure Streamlit page
 st.set_page_config(
     page_title="Social Caption Generator",
     page_icon="✨",
     layout="centered"
 )
 
-# Constants
-TONES = ['Funny', 'Professional', 'Luxury']
-INPUT_COST_PER_M = 0.075   # $0.075 per 1M input tokens
-OUTPUT_COST_PER_M = 0.30   # $0.30  per 1M output tokens
-MAX_RETRIES = 3
-RETRY_DELAY = 12  # seconds between retries on rate limit
+# ── Styles ────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+    .main { max-width: 750px; }
+    .stTextArea textarea { font-size: 15px; }
+    .caption-box {
+        background: #f0f4ff;
+        border-left: 4px solid #4f46e5;
+        padding: 14px 18px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        font-size: 15px;
+        line-height: 1.6;
+    }
+    .header-text { color: #4f46e5; font-size: 2rem; font-weight: 700; }
+    .sub-text { color: #666; margin-bottom: 1.5rem; }
+    .cost-box {
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 13px;
+        color: #555;
+        margin-top: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
+# ── Header ────────────────────────────────────────────────────────────────────
+st.markdown('<p class="header-text">✨ Social Caption Generator</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-text">Generate AI-powered social media captions for your products — instantly.</p>', unsafe_allow_html=True)
 
+# ── API Key ───────────────────────────────────────────────────────────────────
+# Try Streamlit secrets first, then env, then ask user
 def get_api_key():
-    """
-    Retrieve the API key from Streamlit Secrets (cloud deployment)
-    or fall back to the local .env.local file for local development.
-    """
     try:
-        return st.secrets["GEMINI_API_KEY"]
+        key = st.secrets["GEMINI_API_KEY"]
+        if key:
+            return key
     except Exception:
-        return os.environ.get("GEMINI_API_KEY", "")
+        pass
+    return os.environ.get("GEMINI_API_KEY", "")
 
+api_key = get_api_key()
 
-def generate_captions(description: str, tone: str):
-    """
-    Call the Gemini API to generate 5 social media captions.
-    Includes retry logic for rate limit errors (429).
-    Returns (captions: list, usage: dict) or (None, None) on failure.
-    """
-    api_key = get_api_key()
+# If no key found anywhere, show input field
+if not api_key:
+    st.warning("Please enter your Gemini API Key to get started.")
+    api_key = st.text_input("🔑 Gemini API Key", type="password", placeholder="AQ.Ab8R...")
     if not api_key:
-        st.error("⚠️ Missing Gemini API Key. Add it to Streamlit Secrets or your .env.local file.")
-        return None, None
+        st.stop()
 
+# ── Caption Generator Logic ───────────────────────────────────────────────────
+def generate_captions(description, tone, api_key):
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel("gemini-3.5-flash")
 
     prompt = f"""
-    You are an expert social media manager.
-    Generate exactly 5 distinct social media caption variants for the following product/service.
+You are a social media expert. Generate exactly 5 unique social media captions for this product.
 
-    Product/Service Description: "{description}"
-    Desired Tone: {tone}
+Product: {description}
+Tone: {tone}
 
-    Guidelines:
-    - Each caption must strictly follow the requested tone.
-    - Each caption must be unique and engaging.
-    - Include 3 to 5 relevant hashtags at the end of each caption.
-    - Return ONLY a JSON array of 5 strings. No markdown, no code fences.
+Rules:
+- Follow the tone strictly (Funny = humorous, Professional = formal, Luxury = premium)
+- Each caption must be different and creative
+- Add 3-5 relevant hashtags at the end of each caption
+- Output ONLY a valid JSON array of 5 strings. No extra text, no code fences.
 
-    Example format:
-    ["Caption one with hashtags #Tag1 #Tag2", "Caption two #Tag3 #Tag4"]
-    """
+Example:
+["Your caption here #Tag1 #Tag2 #Tag3", "Another caption #Tag4 #Tag5"]
+"""
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(3):
         try:
             response = model.generate_content(prompt)
-            raw_text = response.text.replace("```json", "").replace("```", "").strip()
-            captions = json.loads(raw_text)
-
-            if not isinstance(captions, list):
-                raise ValueError("Response is not a list.")
-
-            # Token usage & cost calculation
-            input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0)
-            output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0)
-            total_cost = (
-                (input_tokens / 1_000_000) * INPUT_COST_PER_M
-                + (output_tokens / 1_000_000) * OUTPUT_COST_PER_M
-            )
-
-            # Log to terminal / server console
-            print(f"[LOG] Item: '{description[:40]}'")
-            print(f"[LOG] Tokens  → Input: {input_tokens} | Output: {output_tokens}")
-            print(f"[LOG] Cost    → ${total_cost:.6f}")
-
-            return captions, {
-                "input": input_tokens,
-                "output": output_tokens,
-                "cost": total_cost,
-            }
-
-        except Exception as err:
-            err_str = str(err)
-            # Rate limit hit – wait and retry
-            if "429" in err_str and attempt < MAX_RETRIES:
-                wait_msg = st.empty()
-                for remaining in range(RETRY_DELAY, 0, -1):
-                    wait_msg.warning(
-                        f"⏳ Rate limit reached. Retrying in {remaining}s "
-                        f"(attempt {attempt}/{MAX_RETRIES})..."
-                    )
+            text = response.text.strip()
+            # Clean up common AI formatting mistakes
+            text = text.replace("```json", "").replace("```", "").strip()
+            captions = json.loads(text)
+            if isinstance(captions, list) and len(captions) > 0:
+                # Log tokens to console
+                input_t = getattr(response.usage_metadata, "prompt_token_count", 0)
+                output_t = getattr(response.usage_metadata, "candidates_token_count", 0)
+                cost = (input_t / 1_000_000 * 0.075) + (output_t / 1_000_000 * 0.30)
+                print(f"[Token Log] Product='{description[:30]}' | Input={input_t} | Output={output_t} | Cost=${cost:.6f}")
+                return captions, {"input": input_t, "output": output_t, "cost": cost}
+        except Exception as e:
+            err = str(e)
+            if "429" in err:
+                # Rate limit - wait and retry
+                countdown = st.empty()
+                for s in range(12, 0, -1):
+                    countdown.warning(f"⏳ API rate limit hit. Retrying in {s} seconds... (attempt {attempt+1}/3)")
                     time.sleep(1)
-                wait_msg.empty()
+                countdown.empty()
             else:
-                st.error(f"❌ Error generating captions: {err}")
-                return None, None
+                return None, {"error": str(e)}
+    return None, {"error": "Failed after 3 retries"}
 
-    st.error("❌ Failed after multiple retries. Please wait a moment and try again.")
-    return None, None
-
-
-# ─── UI ───────────────────────────────────────────────────────────────────────
-
-st.title("✨ Social Caption Generator")
-st.write("Generate engaging social media captions powered by Google Gemini AI.")
+# ── Main Form ─────────────────────────────────────────────────────────────────
 st.divider()
 
-with st.form("caption_form"):
+col1, col2 = st.columns([3, 1])
+with col1:
     description_input = st.text_area(
-        label="📝 Product / Service Descriptions",
-        height=160,
-        placeholder=(
-            "For a single product, type one line.\n"
-            "For batch mode, add one product per line:\n\n"
-            "Premium handmade leather wallet\n"
-            "Noise-cancelling wireless headphones"
-        ),
+        "📦 Product / Service Description",
+        placeholder="e.g. Premium handmade leather wallet\n\nFor batch mode: add each product on a new line",
+        height=140,
+        help="Tip: Enter multiple products on separate lines to use batch mode!"
     )
-    tone = st.selectbox("🎭 Select Tone", TONES)
-    submitted = st.form_submit_button("🚀 Generate Captions", use_container_width=True)
+with col2:
+    tone = st.selectbox("🎭 Tone", ["Funny", "Professional", "Luxury"])
+    num_captions = st.selectbox("# Captions", [5, 3, 10], index=0)
 
-# ─── Processing ───────────────────────────────────────────────────────────────
+generate_btn = st.button("🚀 Generate Captions", use_container_width=True, type="primary")
 
-if submitted:
-    items = [line.strip() for line in description_input.split("\n") if line.strip()]
+# ── Results ───────────────────────────────────────────────────────────────────
+if generate_btn:
+    products = [line.strip() for line in description_input.strip().split("\n") if line.strip()]
 
-    if not items:
-        st.warning("⚠️ Please enter at least one product description.")
+    if not products:
+        st.warning("Please enter at least one product description.")
     else:
+        st.markdown("---")
         st.subheader("📣 Generated Captions")
 
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        progress = st.progress(0)
+        status = st.empty()
 
-        total_input_tokens = 0
-        total_output_tokens = 0
-        total_batch_cost = 0.0
+        total_in = 0
+        total_out = 0
+        total_cost = 0.0
 
-        for i, item in enumerate(items):
-            status_text.info(f"Processing {i + 1} of {len(items)}: *{item}*")
+        for i, product in enumerate(products):
+            status.info(f"Generating captions for **{product}** ({i+1}/{len(products)})...")
 
-            captions, usage = generate_captions(item, tone)
+            captions, usage = generate_captions(product, tone, api_key)
 
             if captions:
-                if len(items) > 1:
-                    st.markdown(f"#### 🔖 {item}")
+                if len(products) > 1:
+                    st.markdown(f"### 🏷️ {product}")
 
-                for caption in captions:
-                    st.success(caption)
+                for j, cap in enumerate(captions[:num_captions]):
+                    st.markdown(f'<div class="caption-box">📌 <b>Caption {j+1}:</b><br><br>{cap}</div>', unsafe_allow_html=True)
 
-                if usage:
-                    total_input_tokens += usage["input"]
-                    total_output_tokens += usage["output"]
-                    total_batch_cost += usage["cost"]
+                if usage and "error" not in usage:
+                    total_in += usage["input"]
+                    total_out += usage["output"]
+                    total_cost += usage["cost"]
+            elif usage and "error" in usage:
+                st.error(f"Error for '{product}': {usage['error']}")
 
-            progress_bar.progress((i + 1) / len(items))
+            progress.progress((i + 1) / len(products))
 
-        status_text.success("✅ Batch processing complete!")
+        status.success(f"✅ Done! Generated captions for {len(products)} product(s).")
 
-        # Cost summary
-        st.divider()
-        st.caption(
-            f"**📊 Session Token Log** — "
-            f"Input: {total_input_tokens} tokens | "
-            f"Output: {total_output_tokens} tokens | "
-            f"Estimated Cost: **${total_batch_cost:.6f}**"
+        # Show cost log at the bottom
+        st.markdown(
+            f'<div class="cost-box">📊 <b>Token Usage Log</b> — '
+            f'Input: {total_in} tokens | Output: {total_out} tokens | '
+            f'Estimated Cost: <b>${total_cost:.6f}</b></div>',
+            unsafe_allow_html=True
         )
 
-# ─── Footer ───────────────────────────────────────────────────────────────────
-st.divider()
-st.caption("Qodex Software Internship Task | Built with Streamlit & Google Gemini AI")
+# ── Footer ────────────────────────────────────────────────────────────────────
+st.markdown("---")
+st.caption("Built for Qodex Software Internship Task 2 | Powered by Google Gemini AI")
